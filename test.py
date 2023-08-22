@@ -1,4 +1,3 @@
-import html
 import modules.ui
 import subprocess
 import functools
@@ -7,7 +6,6 @@ import json
 import gradio as gr
 from pathlib import Path
 from modules import script_callbacks, paths
-from modules.ui_common import plaintext_to_html
 import time
 # Webui root path
 ROOT_DIR = Path().absolute()
@@ -78,6 +76,25 @@ def get_checkbox_values(*checkboxes):
     return values
 
 
+def create_link(source_path, target_path, info):
+    # 创建符号链接
+    try:
+        os.symlink(source_path, target_path, os.path.isdir(source_path))
+        info.append(f"target {target_path}      create link success")
+        print(f"Created symbolic link for {source_path}")
+    except OSError as e:
+        info.append(f"{e}")
+        info.append(
+            f"target {target_path}      create link fail, if your system is windows please open developer mode and try agin")
+        print(
+            f"{e}--Created symbolic link for {source_path} fail, if your system is windows please open developer mode and try agin")
+    except Exception as e:
+        info.append(f"{e}")
+        info.append(
+            f"Some unexpected exceptions have occurred. Please save the information and ask the question to : https://github.com/dhs964057117/sd-webui-models-manager")
+        print("{e}--Some unexpected exceptions have occurred. Please save the information and ask the question to : https://github.com/dhs964057117/sd-webui-models-manager")
+
+
 def create_symbolic_links(source_folder, target_folder, info):
     # 获取源文件夹中的所有文件
     files = os.listdir(source_folder)
@@ -93,29 +110,40 @@ def create_symbolic_links(source_folder, target_folder, info):
             print("目标路径已存在，跳过创建符号链接")
         elif os.path.isdir(source_path):
             create_junction(source_path, target_path, info)
+            # os.symlink(source_path, target_path)
+            # info.append(f"target {target_path}      create link success")
             print(
                 f"Created junction for {file} src {source_path} target {target_path}")
         else:
-            # 创建符号链接
-            os.symlink(source_path, target_path)
-            info.append(f"target {target_path}      create link success")
-            print(f"Created symbolic link for {file}")
+            create_link(source_path, target_path, info)
 
 
 def create_junction(src, dst, info):
-    with open(os.devnull, 'w') as devnull:
-        try:
-            subprocess.call('cmd.exe /c mklink /J "%s" "%s"' %
-                            (dst, src), shell=True, stdout=devnull, stderr=devnull)
-            info.append(f"target {dst}      create link success")
-            print("创建目录链接成功!!")
-        except Exception as e:
-            info.append(f"target {dst}      create link fail")
-            print(e)
+    import platform
+    if platform.system() == "Windows":
+        with open(os.devnull, 'w') as devnull:
+            try:
+                subprocess.call('cmd.exe /c mklink /J "%s" "%s"' %
+                                (dst, src), shell=True, stdout=devnull, stderr=devnull)
+                info.append(f"target {dst}      create link success")
+                print("创建目录链接成功!!")
+            except Exception as e:
+                info.append(f"{e}")
+                info.append(f"target {dst}      create link fail")
+                print(e)
+    else:
+        create_link(src, dst, info)
 
 
-def info():
-    return f"""<!-- {time.time()} -->"""
+def getTextWithColor(text):
+    if (text.find("Error") != -1):
+        return "color:red;"
+    elif (text.find("fail") != -1):
+        return "color:#FFCC00;"
+    elif (text.find("success") != -1):
+        return "color:green;"
+    else:
+        return "color:green;"
 
 
 def create_symbol_link(checkboxes, textboxs):
@@ -136,10 +164,12 @@ def create_symbol_link(checkboxes, textboxs):
     for line in info:
         if (line.find("create link success") != -1):
             success = True
-        lines = lines + f"{line}" + "<br/>"
+        lines = lines + \
+            f'<p style="{getTextWithColor(line)}">' + f"{line}" + "<br/><p>"
     if (success):
-        lines += "models dir has update, use to reload webui"
-    return [f"""<p>{lines}<p>"""]
+        lines += f'<p style="color:green;">' + \
+            "models dir has update, use to refresh models or reload webui <p>"
+    return [f"""{lines}"""]
 
 
 def checkbox_callback(checkbox_value):
@@ -184,13 +214,13 @@ def on_ui_tabs():
                         on_textbox_change, textbox_info.elem_id), textbox_info)
                     textboxs.append(textbox_info)
                     checkBox = gr.Checkbox(
-                        value=value != '', elem_id=key, label='enable')
+                        value=value != '', elem_id=key, label='Enable')
                     checkBox.change(functools.partial(
                         on_checkbox_change, checkBox.elem_id), checkBox)
                     checkboxes.append(checkBox)
             with gr.Column(scale=80):
                 change_btn = gr.Button(
-                    value="change", variant='primary', elem_id="change_btn")
+                    value="Apply settings", variant='primary', elem_id="change_btn")
                 update_result = gr.HTML(elem_id="update_result")
                 change_btn.click(fn=modules.ui.wrap_gradio_call(functools.partial(
                     create_symbol_link, checkboxes, textboxs), extra_outputs=[gr.update()]), outputs=[update_result])
